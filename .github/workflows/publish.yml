@@ -1,0 +1,135 @@
+name: 🚀 Publish Skills
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to bump to
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - premajor
+          - preminor
+          - prepatch
+      push:
+        description: Push changes to the repository
+        default: false
+        type: boolean
+
+jobs:
+  publish:
+    name: Publish Skills
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Create GitHub App Token
+      uses: actions/create-github-app-token@v1
+      id: app-token
+      with:
+        app-id: ${{ vars.GH_APP_ID }}
+        private-key: ${{ secrets.GH_APP_KEY }}
+
+    - name: Checkout
+      uses: actions/checkout@v6
+      with:
+        token: ${{ steps.app-token.outputs.token }}
+
+    - name: Bump Version
+      id: bump
+      uses: duplocloud/version-bump@v1
+      with:
+        token: ${{ steps.app-token.outputs.token }}
+        version: ${{ inputs.version }}
+        push: ${{ inputs.push }}
+
+    - name: Build Skill Packages
+      id: build
+      run: |
+        mkdir -p dist
+        SKILLS_DIR="skills"
+        SKILL_FILES=""
+        
+        # Find all skill folders (directories containing SKILL.md)
+        for skill_dir in "$SKILLS_DIR"/*/; do
+          if [ -f "${skill_dir}SKILL.md" ]; then
+            skill_name=$(basename "$skill_dir")
+            skill_file="dist/${skill_name}.skill"
+            
+            echo "📦 Building skill: $skill_name"
+            
+            # Navigate to parent and zip the folder (not just contents)
+            # This ensures the zip contains folder/SKILL.md structure
+            cd "$SKILLS_DIR"
+            zip -r "../${skill_file}" "$skill_name"
+            cd ..
+            
+            echo "✅ Created: $skill_file"
+            
+            # Append to list of skill files
+            if [ -n "$SKILL_FILES" ]; then
+              SKILL_FILES="${SKILL_FILES}"$'\n'"${skill_file}"
+            else
+              SKILL_FILES="${skill_file}"
+            fi
+          fi
+        done
+        
+        # Output the list of skill files
+        echo "skill-files<<EOF" >> $GITHUB_OUTPUT
+        echo "$SKILL_FILES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        # List built skills
+        echo "📋 Built skill packages:"
+        ls -la dist/
+
+    - name: Create Release
+      id: release
+      if: inputs.push
+      uses: softprops/action-gh-release@v2
+      with:
+        token: ${{ steps.app-token.outputs.token }}
+        name: ${{ steps.bump.outputs.tag }}
+        tag_name: ${{ steps.bump.outputs.tag }}
+        prerelease: false
+        files: dist/*.skill
+        body: |
+          [![Publish](${{ github.server_url }}/${{ github.repository }}/actions/workflows/publish.yml/badge.svg)](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          ## Skill Packages
+
+          Download the `.skill` files below and upload them to Claude.ai, Codex, or Github Copilot:
+          1. Go to claude.ai → Settings → Features → Skills
+          2. Click "Upload skill"
+          3. Select the `.skill` file
+          4. Toggle the skill ON to activate it
+
+          ${{ steps.bump.outputs.release-notes }}
+
+    - name: Summary
+      id: summary
+      env:
+        RELEASE_NOTES: ${{ steps.bump.outputs.release-notes }}
+        NEW_VERSION: ${{ steps.bump.outputs.version }}
+        PREVIOUS_VERSION: ${{ steps.bump.outputs.previous-version }}
+        RELEASE_URL: ${{ steps.release.outputs.url || '' }}
+      run: |
+        cat <<EOF > $GITHUB_STEP_SUMMARY
+        # 🚀 Skills Release Summary
+        
+        **New Version:** ${NEW_VERSION}
+        **Previous Version:** ${PREVIOUS_VERSION}
+        
+        ## 📦 Built Skill Packages
+        $(ls -1 dist/*.skill 2>/dev/null | while read f; do echo "- $(basename $f)"; done)
+        
+        ## 🔗 Release
+        ${RELEASE_URL:-"No release created (push was disabled)"}
+        
+        ## 📝 Release Notes
+        ${RELEASE_NOTES}
+        EOF
