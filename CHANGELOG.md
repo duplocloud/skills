@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-01-12
+
 ### Added 
 
 - initial tf-module skill
