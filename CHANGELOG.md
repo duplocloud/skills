@@ -12,3 +12,6 @@ and this project adheres to
 
 - initial tf-module skill
 - a publish action for github actions
+- added contrib doc
+- added a security doc
+- added an open source license
