@@ -40,7 +40,7 @@ jobs:
 
     - name: Bump Version
       id: bump
-      uses: duplocloud/version-bump@v1
+      uses: duplocloud/version-bump@main
       with:
         token: ${{ steps.app-token.outputs.token }}
         version: ${{ inputs.version }}
