@@ -1,13 +1,13 @@
 ---
-name: tf.gen_module_stack
-description: Generate a full greenfield Terraform stack using the DuploCloud Terraform Provider (path-agnostic, spec-driven)
+name: tf.gen_modular_stack
+description: Generate a greenfield Terraform stack using the DuploCloud Terraform Provider (path-agnostic, spec-driven, fail-fast for unmapped components)
 ---
 
-# tf.gen_module_stack — Terraform Greenfield Modular Generator (DuploCloud Provider)
+# tf.gen_modular_stack — Terraform Greenfield Modular Generator (DuploCloud Provider)
 
-You are an Operator DevOps agent tasked with generating modular Terraform code from a requirements spec using the **DuploCloud Terraform Provider** (`duplocloud/duplocloud`). This skill produces *complete Terraform stacks* with modules and environment composition, runs formatting and validation, and plans when feasible.
+You are an Operator DevOps agent tasked with generating modular Terraform code from a requirements spec using the **DuploCloud Terraform Provider** (`duplocloud/duplocloud`). This skill produces Terraform modules + environment composition, runs formatting and validation, and runs plan only when feasible.
 
-This generator supports multiple components such as VPCs (Duplo networking), S3 buckets, IAM roles, KMS keys, security groups, ECS/EKS services, and DuploCloud managed services.
+This skill is **Duplo-first** and **schema-safe**: it will generate only components that map to known DuploCloud Terraform resources. It will STOP for components that require provider mappings not defined in this skill.
 
 > **Important:** Authentication for the DuploCloud provider MUST be done via environment variables (`DUPLO_HOST` and `DUPLO_TOKEN`). Do **not** write credentials in code.
 
@@ -15,8 +15,8 @@ This generator supports multiple components such as VPCs (Duplo networking), S3 
 
 ## Non-negotiable rules
 
-- Never execute: `terraform apply`, `terraform import`, or any `terraform state` commands.
-- Do not hardcode secrets or backend configuration in generated code.
+- NEVER execute: `terraform apply`, `terraform import`, or any `terraform state *` commands.
+- Do not hardcode secrets or backend configuration in committed code.
 - Always run:
   - `terraform fmt -recursive`
   - `terraform init` (if feasible)
@@ -27,80 +27,37 @@ This generator supports multiple components such as VPCs (Duplo networking), S3 
 
 ---
 
-## Inputs supplied when invoking this skill
+## DuploCloud Provider Mapping Contract (NO guessing)
 
-- `ENV`: Target environment (e.g., dev, stage, prod)
-- `SPEC`: Path to a YAML requirements spec file in the repository
+This skill MUST NOT invent DuploCloud Terraform resource names or fields.
 
----
+Only generate components that map to known DuploCloud provider resources listed below.
 
-## Spec Input Format (YAML)
+### Approved DuploCloud Terraform resources (v1)
 
-The spec MUST adhere to this structured schema:
+Use these resource types only:
 
-```yaml
-stack_name: <string>
-provider:
-  duplocloud:
-    tenant_name: <string|null>
-    tenant_id: <string|null>
-    create_tenant: <bool>        # default false
-    plan_id: <string|null>       # optional DuploCloud plan for tenant
-name_prefix: <string>
-tags:
-  <key>: <value>
+- Tenant: `duplocloud_tenant`
+- Infrastructure: `duplocloud_infrastructure`
+- S3: `duplocloud_s3_bucket`
+- Duplo Service: `duplocloud_duplo_service`
+- Tenant network security rules (SG-equivalent): `duplocloud_tenant_network_security_rule`
+- RDS: `duplocloud_rds_instance`
 
-components:
-  networking:
-    vpc: <bool>                  # if true, generate networking
-    cidr_block: <string>         # e.g., "10.20.0.0/16"
-    az_count: <int>              # default 2
-  s3_buckets:
-    - name: <string>
-      enable_versioning: <bool>
-      allow_public_access: <bool>
-      encryption: sse-s3|sse-kms
-      kms_key_arn: <string|null>
-  kms_keys:
-    - name: <string>
-      description: <string|null>
-      deletion_window_in_days: <int>
-      enable_key_rotation: <bool>
-  iam_roles:
-    - name: <string>
-      assume_services: [<string>, ...]
-      inline_policies:
-        - name: <string>
-          statements:
-            - effect: Allow|Deny
-              actions: [<string>, ...]
-              resources: [<string>, ...]
-  security_groups:
-    - name: <string>
-      description: <string|null>
-      ingress:
-        - from_port: <int>
-          to_port: <int>
-          protocol: tcp|udp|-1
-          cidr_blocks: [<string>, ...]
-          source_sg: <string|null>
-      egress:
-        - from_port: <int>
-          to_port: <int>
-          protocol: tcp|udp|-1
-          cidr_blocks: [<string>, ...]
-  duplo_services:
-    - name: <string>
-      image: <string>
-      replicas: <int>
-      ports:
-        - container_port: <int>
-          protocol: tcp|udp
-      env:
-        <key>: <value>
-  eks_clusters:
-    - name: <string>
-      version: <string>
-      public_endpoint: <bool>
-      private_endpoint: <bool>
-```
+If the spec requests a component not covered by this list (example: IAM roles, EKS clusters, deep VPC subnet modeling), STOP and report:
+- `unsupported component: <name>`
+- `missing duplocloud provider mapping`
+
+### Provider version pinning (required)
+
+Always generate this in every `versions.tf`:
+
+```hcl
+terraform {
+  required_providers {
+    duplocloud = {
+      source  = "duplocloud/duplocloud"
+      version = "~> 0.11.32"
+    }
+  }
+}
