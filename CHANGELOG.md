@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-01-23
+
 ## [0.0.4] - 2026-01-23
 
 ### Updated 
