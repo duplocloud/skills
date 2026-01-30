@@ -18,6 +18,15 @@ and this project adheres to
 
 ## [0.0.3] - 2026-01-22
 
+### Added
+
+- AI Ops onboarding specification framework (v1)
+- JSON Schema contract for onboarding specs
+- Example onboarding specs (minimal and production)
+- Spec validation tooling (Makefile + Python validator)
+- CI workflow support for enforcing spec validity
+- Local developer support via virtualenv-based spec validation
+
 ## [0.0.2] - 2026-01-12
 
 ### Added 
