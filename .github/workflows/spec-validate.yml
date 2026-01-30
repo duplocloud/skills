@@ -1,0 +1,37 @@
+name: Spec Validate
+
+on:
+  pull_request:
+    paths:
+      - "spec/**"
+      - "scripts/**"
+      - "requirements-dev.txt"
+      - "Makefile"
+  push:
+    branches: ["main"]
+    paths:
+      - "spec/**"
+      - "scripts/**"
+      - "requirements-dev.txt"
+      - "Makefile"
+
+jobs:
+  validate-specs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Validate specs
+        run: |
+          make spec-validate

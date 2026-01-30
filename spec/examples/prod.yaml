@@ -1,0 +1,94 @@
+apiVersion: aiops.duplocloud.io/v1
+kind: OnboardingSpec
+
+metadata:
+  name: example-prod
+  client: example
+  environment: prod
+  owner: devops
+  tags:
+    compliance: "SOC2"
+
+context:
+  objective: "Production onboarding spec with backend enabled."
+  guardrails:
+    allowApply: false
+    allowImport: false
+    allowStateOps: false
+    requireValidate: true
+    planPolicy:
+      failOnDeleteOrReplace: true
+    secretsPolicy:
+      allowPlaintextInSpec: false
+
+providers:
+  duplocloud:
+    hostEnv: DUPLO_HOST
+    tokenEnv: DUPLO_TOKEN
+    tenant:
+      mode: existing
+      tenantId: "22222222-2222-2222-2222-222222222222"   # replace with real UUID
+      tenantName: "example-prod"
+  terraform:
+    requiredProviders:
+      duplocloud:
+        source: duplocloud/duplocloud
+        version: "~> 0.11.32"
+    backend:
+      enabled: true
+      configFile: "terraform/envs/prod/backend.hcl"
+
+inputs:
+  naming:
+    prefix: example-prod
+    delimiter: "-"
+  tags:
+    Owner: DevOps
+    Client: example
+    Environment: prod
+    ManagedBy: aiops
+
+components:
+  duplo:
+    infrastructure:
+      enabled: false
+    s3Buckets:
+      - name: artifacts
+        versioning: true
+        publicAccess: false
+        encryption:
+          mode: sse-s3
+          kmsKeyArn: null
+    tenantNetworkSecurityRules:
+      - description: "Allow HTTPS from corp CIDR"
+        protocol: tcp
+        fromPort: 443
+        toPort: 443
+        source:
+          type: cidr
+          value: "10.0.0.0/8"
+    services: []
+    rds: []
+    eks: []
+  terraform:
+    layout:
+      mode: explicit
+      moduleNamespace: example
+    generation:
+      style: modular
+      createReadme: true
+      emitRuntimeArtifacts: true
+
+workflows:
+  - name: terraform-greenfield
+    enabled: true
+    steps:
+      - skill: tf.gen_modular_stack
+        inputs:
+          env: prod
+          specPath: spec/examples/prod.yaml
+        outputs:
+          prBody: ".aiops/runtime/prod/PR_BODY.md"
+          validate: ".aiops/runtime/prod/validate.txt"
+          planTxt: ".aiops/runtime/prod/plan.txt"
+          planJson: ".aiops/runtime/prod/plan.json"
