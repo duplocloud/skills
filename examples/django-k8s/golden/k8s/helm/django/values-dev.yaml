@@ -1,0 +1,7 @@
+image:
+  repository: ghcr.io/example-org/example-django
+  tag: latest
+
+service:
+  port: 80
+  targetPort: 8000

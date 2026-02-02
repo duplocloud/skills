@@ -5,7 +5,7 @@ PY := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
 SCHEMA := spec/schema/aiops-onboarding.v1.schema.json
-SPEC_GLOB := spec/**/*.y*ml
+SPEC_GLOB := spec/**/*.y*ml examples/**/spec/**/*.y*ml
 
 help:
 	@echo "Targets:"

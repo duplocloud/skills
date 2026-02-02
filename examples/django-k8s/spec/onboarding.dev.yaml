@@ -1,0 +1,62 @@
+apiVersion: aiops.duplocloud.io/v1alpha1
+kind: OnboardingSpec
+
+metadata:
+  name: example-dev-django
+  client: example
+  environment: dev
+  owner: devops
+
+context:
+  objective: "POC: Django deployment using phased AI Ops automation"
+  guardrails:
+    allowApply: false
+    allowImport: false
+    allowStateOps: false
+    requireValidate: true
+
+providers:
+  duplocloud:
+    hostEnv: DUPLO_HOST
+    tokenEnv: DUPLO_TOKEN
+    tenant:
+      mode: existing
+      tenantId: "00000000-0000-0000-0000-000000000000"
+
+execution:
+  mode: phased
+  phases:
+    - name: platform
+      enabled: true
+    - name: app
+      enabled: false
+    - name: cicd
+      enabled: false
+
+components:
+  kubernetes:
+    phase: platform
+    enabled: true
+    namespace:
+      name: example-dev
+
+  application:
+    phase: app
+    enabled: false
+    name: django
+    container:
+      imageName: ghcr.io/example-org/example-django
+      port: 8000
+
+  cicd:
+    phase: cicd
+    enabled: false
+
+workflows:
+  - name: k8s-bootstrap
+    enabled: true
+    phase: platform
+    steps:
+      - skill: k8s.bootstrap
+        inputs:
+          specPath: examples/django-k8s/spec/onboarding.dev.yaml

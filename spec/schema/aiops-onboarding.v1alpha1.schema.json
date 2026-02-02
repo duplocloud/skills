@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Ops Onboarding Spec (v1alpha1)",
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "context",
+    "providers",
+    "execution",
+    "components",
+    "workflows"
+  ],
+  "additionalProperties": false,
+
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "enum": ["aiops.duplocloud.io/v1alpha1"]
+    },
+
+    "kind": {
+      "type": "string",
+      "enum": ["OnboardingSpec"]
+    },
+
+    "metadata": {
+      "type": "object",
+      "required": ["name", "client", "environment"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "client": { "type": "string" },
+        "environment": { "type": "string" },
+        "owner": { "type": "string" }
+      }
+    },
+
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "objective": { "type": "string" },
+        "guardrails": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allowApply": { "type": "boolean" },
+            "allowImport": { "type": "boolean" },
+            "allowStateOps": { "type": "boolean" },
+            "requireValidate": { "type": "boolean" }
+          }
+        }
+      }
+    },
+
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "duplocloud": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hostEnv": { "type": "string" },
+            "tokenEnv": { "type": "string" },
+            "tenant": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mode": { "type": "string", "enum": ["existing", "create"] },
+                "tenantId": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "execution": {
+      "type": "object",
+      "required": ["mode", "phases"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "type": "string", "enum": ["phased", "all-at-once"] },
+        "phases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "enabled"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "enabled": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kubernetes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "phase": { "type": "string" },
+            "enabled": { "type": "boolean" },
+            "namespace": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" }
+              }
+            }
+          }
+        },
+
+        "application": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "phase": { "type": "string" },
+            "enabled": { "type": "boolean" },
+            "name": { "type": "string" },
+            "container": {
+              "type": "object",
+              "properties": {
+                "imageName": { "type": "string" },
+                "port": { "type": "integer" }
+              }
+            }
+          }
+        },
+
+        "cicd": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "phase": { "type": "string" },
+            "enabled": { "type": "boolean" }
+          }
+        }
+      }
+    },
+
+    "workflows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "enabled", "phase", "steps"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "phase": { "type": "string" },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["skill"],
+              "additionalProperties": false,
+              "properties": {
+                "skill": { "type": "string" },
+                "inputs": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
