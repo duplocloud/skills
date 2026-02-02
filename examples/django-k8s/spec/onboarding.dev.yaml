@@ -8,7 +8,7 @@ metadata:
   owner: devops
 
 context:
-  objective: "POC: Django deployment using phased AI Ops automation"
+  objective: "POC: Django → Kubernetes bootstrap using phased AI Ops automation"
   guardrails:
     allowApply: false
     allowImport: false

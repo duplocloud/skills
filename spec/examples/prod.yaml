@@ -1,4 +1,4 @@
-apiVersion: aiops.duplocloud.io/v1
+apiVersion: aiops.duplocloud.io/v1alpha1
 kind: OnboardingSpec
 
 metadata:
@@ -6,20 +6,14 @@ metadata:
   client: example
   environment: prod
   owner: devops
-  tags:
-    compliance: "SOC2"
 
 context:
-  objective: "Production onboarding spec with backend enabled."
+  objective: "POC: Prod-shaped spec under v1alpha1 for schema validation"
   guardrails:
     allowApply: false
     allowImport: false
     allowStateOps: false
     requireValidate: true
-    planPolicy:
-      failOnDeleteOrReplace: true
-    secretsPolicy:
-      allowPlaintextInSpec: false
 
 providers:
   duplocloud:
@@ -27,68 +21,44 @@ providers:
     tokenEnv: DUPLO_TOKEN
     tenant:
       mode: existing
-      tenantId: "22222222-2222-2222-2222-222222222222"   # replace with real UUID
-      tenantName: "example-prod"
-  terraform:
-    requiredProviders:
-      duplocloud:
-        source: duplocloud/duplocloud
-        version: "~> 0.11.32"
-    backend:
-      enabled: true
-      configFile: "terraform/envs/prod/backend.hcl"
+      tenantId: "00000000-0000-0000-0000-000000000000"
 
-inputs:
-  naming:
-    prefix: example-prod
-    delimiter: "-"
-  tags:
-    Owner: DevOps
-    Client: example
-    Environment: prod
-    ManagedBy: aiops
+execution:
+  mode: phased
+  phases:
+    - name: infra
+      enabled: false
+    - name: platform
+      enabled: true
+    - name: app
+      enabled: false
+    - name: cicd
+      enabled: false
 
 components:
-  duplo:
-    infrastructure:
-      enabled: false
-    s3Buckets:
-      - name: artifacts
-        versioning: true
-        publicAccess: false
-        encryption:
-          mode: sse-s3
-          kmsKeyArn: null
-    tenantNetworkSecurityRules:
-      - description: "Allow HTTPS from corp CIDR"
-        protocol: tcp
-        fromPort: 443
-        toPort: 443
-        source:
-          type: cidr
-          value: "10.0.0.0/8"
-    services: []
-    rds: []
-    eks: []
-  terraform:
-    layout:
-      mode: explicit
-      moduleNamespace: example
-    generation:
-      style: modular
-      createReadme: true
-      emitRuntimeArtifacts: true
+  kubernetes:
+    phase: platform
+    enabled: true
+    namespace:
+      name: example-prod
+
+  application:
+    phase: app
+    enabled: false
+    name: django
+    container:
+      imageName: ghcr.io/example-org/example-django
+      port: 8000
+
+  cicd:
+    phase: cicd
+    enabled: false
 
 workflows:
-  - name: terraform-greenfield
+  - name: k8s-bootstrap
     enabled: true
+    phase: platform
     steps:
-      - skill: tf.gen_modular_stack
+      - skill: k8s.bootstrap
         inputs:
-          env: prod
           specPath: spec/examples/prod.yaml
-        outputs:
-          prBody: ".aiops/runtime/prod/PR_BODY.md"
-          validate: ".aiops/runtime/prod/validate.txt"
-          planTxt: ".aiops/runtime/prod/plan.txt"
-          planJson: ".aiops/runtime/prod/plan.json"

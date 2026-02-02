@@ -1,23 +1,18 @@
-apiVersion: aiops.duplocloud.io/v1
+apiVersion: aiops.duplocloud.io/v1alpha1
 kind: OnboardingSpec
 
 metadata:
-  name: example-minimal-dev
+  name: minimal-dev
   client: example
   environment: dev
-  owner: devops
 
 context:
-  objective: "Minimal onboarding spec for Terraform greenfield demo."
+  objective: "Minimal spec for schema validation smoke test"
   guardrails:
     allowApply: false
     allowImport: false
     allowStateOps: false
     requireValidate: true
-    planPolicy:
-      failOnDeleteOrReplace: true
-    secretsPolicy:
-      allowPlaintextInSpec: false
 
 providers:
   duplocloud:
@@ -25,54 +20,38 @@ providers:
     tokenEnv: DUPLO_TOKEN
     tenant:
       mode: existing
-      tenantId: "11111111-1111-1111-1111-111111111111"   # replace with real UUID for plan
-  terraform:
-    requiredProviders:
-      duplocloud:
-        source: duplocloud/duplocloud
-        version: "~> 0.11.32"
-    backend:
-      enabled: false
-      configFile: null
+      tenantId: "00000000-0000-0000-0000-000000000000"
 
-inputs:
-  naming:
-    prefix: example-dev
-    delimiter: "-"
-  tags:
-    Owner: DevOps
-    Client: example
-    Environment: dev
+execution:
+  mode: phased
+  phases:
+    - name: platform
+      enabled: true
 
 components:
-  duplo:
-    infrastructure:
-      enabled: false
-    s3Buckets:
-      - name: artifacts
-        versioning: true
-        publicAccess: false
-        encryption:
-          mode: sse-s3
-          kmsKeyArn: null
-    tenantNetworkSecurityRules: []
-    services: []
-    rds: []
-    eks: []
-  terraform:
-    layout:
-      mode: infer
-      moduleNamespace: example
-    generation:
-      style: modular
-      createReadme: true
-      emitRuntimeArtifacts: true
+  kubernetes:
+    phase: platform
+    enabled: true
+    namespace:
+      name: example-dev
+
+  application:
+    phase: app
+    enabled: false
+    name: django
+    container:
+      imageName: ghcr.io/example-org/example-django
+      port: 8000
+
+  cicd:
+    phase: cicd
+    enabled: false
 
 workflows:
-  - name: terraform-greenfield
+  - name: k8s-bootstrap
     enabled: true
+    phase: platform
     steps:
-      - skill: tf.gen_modular_stack
+      - skill: k8s.bootstrap
         inputs:
-          env: dev
           specPath: spec/examples/minimal.dev.yaml

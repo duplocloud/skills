@@ -1,4 +1,28 @@
-.codex/auth.json
+# -------------------------
+# Codex (tooling)
+# -------------------------
+
+# Ignore everything under .codex by default
+.codex/*
+
+# Allow skill symlinks (tooling bridge only)
+!.codex/skills
+!.codex/skills/*
+
+# Still ignore Codex system/internal skills
 .codex/skills/.system/
+
+# Ignore Codex auth and state
+.codex/auth.json
+
+# AI Ops runtime (generated, non-deterministic)
+.aiops/
+
+# Local Python venv
+.venv/
+
+# Generated artifacts at repo root (golden outputs live under examples/)
+k8s/
+
 dist
 stuff/

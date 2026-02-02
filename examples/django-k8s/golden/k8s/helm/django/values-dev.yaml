@@ -1,6 +1,11 @@
+namespace: example-dev
+
 image:
   repository: ghcr.io/example-org/example-django
-  tag: latest
+  tag: "REPLACE_WITH_SHA"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
 
 service:
   port: 80

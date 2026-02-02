@@ -1,82 +1,73 @@
-#!/usr/bin/env python3
 import argparse
 import glob
 import json
-import os
+import shlex
 import sys
-from pathlib import Path
 
 import yaml
-from jsonschema import Draft202012Validator
-
-
-def load_json(path: Path):
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def load_yaml(path: Path):
-    with path.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
-
-
-def iter_yaml_files(spec_glob: str):
-    return [Path(p) for p in glob.glob(spec_glob, recursive=True) if Path(p).is_file()]
-
-
-def format_error(err):
-    loc = ".".join([str(x) for x in err.absolute_path]) if err.absolute_path else "<root>"
-    schema_loc = ".".join([str(x) for x in err.absolute_schema_path]) if err.absolute_schema_path else "<schema>"
-    return f"- path: {loc}\n  message: {err.message}\n  schema_path: {schema_loc}"
+import jsonschema
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Validate onboarding specs against JSON Schema.")
-    ap.add_argument("--schema", required=True, help="Path to JSON schema file")
-    ap.add_argument("--spec-glob", default="spec/**/*.y*ml", help="Glob for spec YAML files")
-    ap.add_argument("--fail-on-empty", action="store_true", help="Fail if no specs found")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(description="Validate specs against schema")
+    parser.add_argument("--schema", required=True, help="Path to the JSON schema file")
+    parser.add_argument(
+        "--spec-glob",
+        type=str,
+        default=None,
+        help='Glob pattern(s) for spec files (space-separated in quotes, as passed by Makefile)',
+    )
+    parser.add_argument("--fail-on-empty", action="store_true", help="Fail if no spec files are found")
 
-    schema_path = Path(args.schema)
-    if not schema_path.exists():
-        print(f"ERROR: schema not found: {schema_path}", file=sys.stderr)
-        return 2
+    args = parser.parse_args()
 
-    schema = load_json(schema_path)
-    validator = Draft202012Validator(schema)
+    spec_files = []
+    if args.spec_glob:
+        # Makefile passes multiple glob patterns as ONE quoted string; split into patterns here.
+        patterns = shlex.split(args.spec_glob)
+        seen = set()
+        for pattern in patterns:
+            for path in glob.glob(pattern, recursive=True):
+                seen.add(path)
+        spec_files = sorted(seen)
 
-    files = iter_yaml_files(args.spec_glob)
-    if not files and args.fail_on_empty:
-        print(f"ERROR: No specs found for glob: {args.spec_glob}", file=sys.stderr)
-        return 2
+    if not spec_files:
+        print(f"ERROR: No specs found for glob: {args.spec_glob}")
+        if args.fail_on_empty:
+            sys.exit(2)
+        return
 
-    failures = 0
-    for fpath in files:
-        try:
-            data = load_yaml(fpath)
-            if data is None:
-                raise ValueError("YAML file is empty or invalid")
-        except Exception as e:
-            failures += 1
-            print(f"\n❌ {fpath}\n- YAML parse error: {e}")
-            continue
+    with open(args.schema) as f:
+        schema = json.load(f)
 
-        errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
+    # Use Draft7Validator unless your schema explicitly depends on 2020-12 features.
+    validator = jsonschema.Draft7Validator(schema)
+
+    error_found = False
+
+    for spec_file in spec_files:
+        with open(spec_file) as f:
+            try:
+                spec = yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                print(f"ERROR: Failed to parse YAML file {spec_file}: {e}")
+                error_found = True
+                continue
+
+        errors = sorted(validator.iter_errors(spec), key=lambda e: list(e.path))
         if errors:
-            failures += 1
-            print(f"\n❌ {fpath}")
-            for err in errors:
-                print(format_error(err))
+            print(f"❌ {spec_file}")
+            for error in errors:
+                print(f"  - {error.message}")
+            error_found = True
         else:
-            print(f"✅ {fpath}")
+            print(f"✅ {spec_file}")
 
-    if failures:
-        print(f"\nFAILED: {failures} file(s) invalid.")
-        return 1
+    if error_found:
+        sys.exit(1)
 
     print("\nPASSED: all specs valid.")
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
