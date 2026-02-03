@@ -1,0 +1,112 @@
+#!/bin/bash
+#
+# Trigger GitHub Actions workflows across multiple repositories
+#
+# Usage:
+#   1. Set GITHUB_TOKEN environment variable or update below
+#   2. Update repository lists for your use case
+#   3. Update ORG_NAME, WORKFLOW_NAME, BRANCH_REF, ENVIRONMENT
+#   4. Run: ./trigger-workflows.sh
+#
+# Features:
+#   - Batch workflow triggering
+#   - Conditional input handling (monorepo vs single-service)
+#   - Run ID extraction after trigger
+#   - Structured logging
+#
+
+# Configuration
+export GITHUB_TOKEN="${GITHUB_TOKEN:-}"  # Set via environment or hardcode here
+ORG_NAME="${ORG_NAME:-Brookai}"          # Your GitHub organization
+WORKFLOW_NAME="${WORKFLOW_NAME:-duplo-build.yaml}"  # Workflow file name
+BRANCH_REF="${BRANCH_REF:-duplo}"        # Branch to run workflow from
+ENVIRONMENT="${ENVIRONMENT:-dev01-brook}"  # DuploCloud environment
+LOG_FILE="${LOG_FILE:-./trigger-log-$(date +%Y%m%d-%H%M%S).log}"
+
+# Validate GitHub token
+if [ -z "$GITHUB_TOKEN" ]; then
+  echo "ERROR: GITHUB_TOKEN not set"
+  echo "Set via: export GITHUB_TOKEN=ghp_xxx"
+  exit 1
+fi
+
+timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+echo "" >> $LOG_FILE
+echo "[$timestamp] TRIGGERING $WORKFLOW_NAME WORKFLOWS" >> $LOG_FILE
+echo "WORKFLOW: $WORKFLOW_NAME" >> $LOG_FILE
+echo "BRANCH: $BRANCH_REF" >> $LOG_FILE
+echo "ENVIRONMENT: $ENVIRONMENT" >> $LOG_FILE
+echo "" >> $LOG_FILE
+
+# Repos that need "service" input (monorepos with multiple services)
+# Update this list with your monorepo names
+for repo in repo-with-services1 repo-with-services2; do
+  echo "=== Triggering $repo duplo-build.yaml ==="
+  
+  response=$(gh workflow run duplo-build.yaml \
+    --repo $ORG_NAME/$repo \
+    --ref $BRANCH_REF \
+    --field environment=$ENVIRONMENT \
+    --field service=all 2>&1)
+  
+  if [ $? -eq 0 ]; then
+    echo "✓ $repo build triggered"
+    sleep 2
+    run_id=$(gh run list --repo $ORG_NAME/$repo --workflow=duplo-build.yaml --limit 1 --json databaseId --jq '.[0].databaseId')
+    echo "  Run ID: $run_id"
+    
+    cat >> $LOG_FILE << LOGEOF
+[$timestamp] REPO: $repo - Build Triggered
+WORKFLOW: duplo-build.yaml
+RUN_ID: $run_id
+INPUTS: environment=dev01-brook, service=all
+REF: duplo
+---
+LOGEOF
+  else
+    echo "✗ $repo build trigger failed: $response"
+    cat >> $LOG_FILE << LOGEOF
+[$timestamp] REPO: $repo - Build Trigger FAILED
+ERROR: $response
+---
+LOGEOF
+  fi
+done
+
+# Repos that only need "environment" input (single-service repos)
+# Update this list with your single-service repo names
+for repo in single-service-repo1 single-service-repo2; do
+  echo "=== Triggering $repo duplo-build.yaml ==="
+  
+  response=$(gh workflow run duplo-build.yaml \
+    --repo $ORG_NAME/$repo \
+    --ref $BRANCH_REF \
+    --field environment=$ENVIRONMENT 2>&1)
+  
+  if [ $? -eq 0 ]; then
+    echo "✓ $repo build triggered"
+    sleep 2
+    run_id=$(gh run list --repo $ORG_NAME/$repo --workflow=duplo-build.yaml --limit 1 --json databaseId --jq '.[0].databaseId')
+    echo "  Run ID: $run_id"
+    
+    cat >> $LOG_FILE << LOGEOF
+[$timestamp] REPO: $repo - Build Triggered
+WORKFLOW: duplo-build.yaml
+RUN_ID: $run_id
+INPUTS: environment=dev01-brook
+REF: duplo
+---
+LOGEOF
+  else
+    echo "✗ $repo build trigger failed: $response"
+    cat >> $LOG_FILE << LOGEOF
+[$timestamp] REPO: $repo - Build Trigger FAILED
+ERROR: $response
+---
+LOGEOF
+  fi
+done
+
+echo ""
+echo "All duplo-build.yaml workflows triggered!"

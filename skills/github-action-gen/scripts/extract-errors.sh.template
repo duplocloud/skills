@@ -1,0 +1,78 @@
+#!/bin/bash
+#
+# Extract and classify errors from failed GitHub Actions runs
+#
+# Usage:
+#   1. Set GITHUB_TOKEN environment variable or update below
+#   2. Update RUNS array with failed repo:run_id pairs
+#   3. Update ORG_NAME to match your organization
+#   4. Run: ./extract-errors.sh
+#
+# Features:
+#   - Pattern-based error categorization
+#   - Structured error reporting
+#   - Log file output for analysis
+#
+
+# Configuration
+export GITHUB_TOKEN="${GITHUB_TOKEN:-}"  # Set via environment or hardcode here
+ORG_NAME="${ORG_NAME:-Brookai}"          # Your GitHub organization
+LOG_FILE="${LOG_FILE:-./error-analysis-$(date +%Y%m%d-%H%M%S).log}"
+
+# Validate GitHub token
+if [ -z "$GITHUB_TOKEN" ]; then
+  echo "ERROR: GITHUB_TOKEN not set"
+  echo "Set via: export GITHUB_TOKEN=ghp_xxx"
+  exit 1
+fi
+
+# Failed runs to analyze (format: "repo-name:run-id")
+# Get these from monitor script or gh run list
+declare -a RUNS=(
+  "repo1:12345678"
+  "repo2:12345679"
+  # Add more failed runs as needed
+)
+
+for entry in "${RUNS[@]}"; do
+  IFS=':' read -r repo run_id <<< "$entry"
+  echo "=== Analyzing $repo (run $run_id) ==="
+
+  # Get the error from logs
+  error=$(gh run view $run_id --repo $ORG_NAME/$repo --log-failed 2>&1 | \
+    grep -B 5 "##\[error\]" | tail -10)
+
+  # Extract the specific error message
+  if echo "$error" | grep -q "not found"; then
+    error_type="JAR_NOT_FOUND"
+    error_msg=$(echo "$error" | grep "not found" | head -1)
+  elif echo "$error" | grep -q "No such file"; then
+    error_type="FILE_NOT_FOUND"
+    error_msg=$(echo "$error" | grep "No such file" | head -1)
+  elif echo "$error" | grep -q "ERROR"; then
+    error_type="BUILD_ERROR"
+    error_msg=$(echo "$error" | grep "ERROR" | head -1)
+  else
+    error_type="UNKNOWN"
+    error_msg="$error"
+  fi
+
+  timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+  echo "  Error Type: $error_type"
+  echo "  Error: $error_msg"
+  echo ""
+
+  # Log to file
+  cat >> $LOG_FILE << EOF
+
+[$timestamp] REPO: $repo - Build Failure Analysis
+RUN_ID: $run_id
+ERROR_TYPE: $error_type
+ERROR_DETAILS:
+$error_msg
+---
+EOF
+done
+
+echo "Error analysis complete. Check log file."

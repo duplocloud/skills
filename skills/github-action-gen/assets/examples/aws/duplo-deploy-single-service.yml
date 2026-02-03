@@ -1,0 +1,107 @@
+# Single-Service Deploy Workflow for AWS EKS via DuploCloud
+#
+# This workflow deploys a Docker image to a DuploCloud-managed Kubernetes service.
+# It updates the container image for an existing service in the specified environment.
+#
+# Prerequisites:
+#   - DuploCloud tenant configured with EKS cluster
+#   - DUPLO_TOKEN secret configured in GitHub repository settings
+#   - DUPLO_HOST variable configured (your DuploCloud portal URL)
+#   - The target service must already exist in DuploCloud
+#
+# Usage:
+#   - Can be triggered manually via workflow_dispatch with an image URI
+#   - Typically called from pipeline.yml after a successful build
+#
+name: Deploy to DuploCloud
+
+permissions:
+  contents: read
+
+on:
+  # Manual trigger - useful for deploying a specific image or re-deploying
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: The environment to deploy to
+        type: choice
+        options:
+          - dev01
+          - staging01
+          # - prod01   # Uncomment if direct prod deploys are allowed
+        required: true
+      image_uri:
+        description: The full ECR image URI to deploy
+        type: string
+        required: true
+
+  # Called from pipeline.yml after build completes
+  workflow_call:
+    inputs:
+      environment:
+        description: The environment to deploy to
+        required: true
+        type: string
+      image_uri:
+        description: The full ECR image URI to deploy
+        required: true
+        type: string
+    secrets:
+      DUPLO_TOKEN:
+        description: The DuploCloud API token
+        required: true
+
+jobs:
+  deploy:
+    name: Deploy Service
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+
+    # Environment variables for DuploCloud CLI
+    env:
+      DUPLO_TOKEN: ${{ secrets.DUPLO_TOKEN }}
+      DUPLO_HOST: ${{ vars.DUPLO_HOST }}
+      DUPLO_TENANT: ${{ inputs.environment }}
+
+    steps:
+      # DuploCloud CI Setup configures AWS credentials and kubectl access
+      - name: DuploCloud CI Setup
+        uses: duplocloud/actions@v1.0.0 # Pin to a tag or full SHA
+
+      - name: Validate image URI
+        run: |
+          if [[ -z "${{ inputs.image_uri }}" ]]; then
+            echo "::error::image_uri is required but empty"
+            exit 1
+          fi
+
+      # Update the Kubernetes service with the new image
+      # The duplocloud/actions/update-image action handles:
+      #   - Connecting to the correct EKS cluster via DuploCloud
+      #   - Updating the service's container image
+      #   - Triggering a rolling deployment
+      - name: Update Service Image
+        uses: duplocloud/actions/update-image@v1.0.0 # Pin to a tag or full SHA
+        with:
+          # Service type - use "service" for DuploCloud native services
+          type: service
+          # The name of your service as it appears in DuploCloud
+          # This must match the service name in your DuploCloud tenant
+          name: your-service-name
+          # The full image URI from the build step
+          image: ${{ inputs.image_uri }}
+
+      # Generate a summary for the GitHub Actions UI
+      - name: Create Deployment Summary
+        if: always()
+        run: |
+          echo "# Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | \`${{ inputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Service** | \`your-service-name\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered By** | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| **Status** | \`deploy complete\` |" >> $GITHUB_STEP_SUMMARY

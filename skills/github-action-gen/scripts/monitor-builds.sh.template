@@ -1,0 +1,127 @@
+#!/bin/bash
+#
+# Monitor multiple GitHub Actions runs until completion
+#
+# Usage:
+#   1. Set GITHUB_TOKEN environment variable or update below
+#   2. Update RUNS array with your repo:run_id pairs
+#   3. Update ORG_NAME to match your organization
+#   4. Run: ./monitor-builds.sh
+#
+# Features:
+#   - Parallel monitoring of multiple builds
+#   - Progress tracking with visual indicators
+#   - Automatic error extraction from failed runs
+#   - Structured logging to file
+#
+
+# Configuration
+export GITHUB_TOKEN="${GITHUB_TOKEN:-}"  # Set via environment or hardcode here
+ORG_NAME="${ORG_NAME:-Brookai}"          # Your GitHub organization
+LOG_FILE="${LOG_FILE:-./build-monitor-$(date +%Y%m%d-%H%M%S).log}"
+
+# Validate GitHub token
+if [ -z "$GITHUB_TOKEN" ]; then
+  echo "ERROR: GITHUB_TOKEN not set"
+  echo "Set via: export GITHUB_TOKEN=ghp_xxx"
+  exit 1
+fi
+
+# Run IDs to monitor (format: "repo-name:run-id")
+# Update this array with your actual run IDs from trigger script
+declare -a RUNS=(
+  "repo1:12345678"
+  "repo2:12345679"
+  "repo3:12345680"
+  # Add more repos as needed
+)
+
+echo "=== Monitoring Build Status ==="
+echo ""
+
+completed_count=0
+total_count=${#RUNS[@]}
+
+while [ $completed_count -lt $total_count ]; do
+  completed_count=0
+  
+  for entry in "${RUNS[@]}"; do
+    IFS=':' read -r repo run_id <<< "$entry"
+    
+    # Get status
+    status=$(gh run view $run_id --repo $ORG_NAME/$repo --json status,conclusion --jq '.status + ":" + (.conclusion // "running")')
+    
+    IFS=':' read -r run_status conclusion <<< "$status"
+    
+    if [ "$run_status" == "completed" ]; then
+      ((completed_count++))
+      
+      if [ "$conclusion" == "success" ]; then
+        echo "✓ $repo: SUCCESS"
+      else
+        echo "✗ $repo: FAILED ($conclusion)"
+      fi
+    else
+      echo "⋯ $repo: IN PROGRESS"
+    fi
+  done
+  
+  echo ""
+  echo "Progress: $completed_count/$total_count completed"
+  echo ""
+  
+  if [ $completed_count -lt $total_count ]; then
+    sleep 30
+  fi
+done
+
+echo "=== All builds completed! ==="
+echo ""
+echo "=== Gathering error details for failures ==="
+echo ""
+
+timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+for entry in "${RUNS[@]}"; do
+  IFS=':' read -r repo run_id <<< "$entry"
+  
+  conclusion=$(gh run view $run_id --repo $ORG_NAME/$repo --json conclusion --jq '.conclusion')
+  
+  if [ "$conclusion" != "success" ]; then
+    echo "--- Analyzing $repo failure ---"
+    
+    # Get failed job logs
+    error_logs=$(gh run view $run_id --repo $ORG_NAME/$repo --log-failed 2>&1 | tail -50)
+    
+    # Try to extract specific error
+    error_line=$(echo "$error_logs" | grep -i "error" | head -5 || echo "$error_logs" | tail -10)
+    
+    echo "$error_line" | head -10
+    echo ""
+    
+    # Log to file
+    cat >> $LOG_FILE << LOGEOF
+
+[$timestamp] REPO: $repo - Build FAILED
+RUN_ID: $run_id
+WORKFLOW: duplo-build.yaml
+CONCLUSION: $conclusion
+ERROR_LOGS:
+$error_line
+---
+LOGEOF
+  else
+    echo "✓ $repo succeeded"
+    
+    cat >> $LOG_FILE << LOGEOF
+
+[$timestamp] REPO: $repo - Build SUCCESS
+RUN_ID: $run_id
+WORKFLOW: duplo-build.yaml
+---
+LOGEOF
+  fi
+done
+
+echo ""
+echo "Error analysis complete. Check log file for details."

@@ -1,0 +1,132 @@
+# Single-Service Build and Push Workflow for AWS ECR via DuploCloud
+#
+# This workflow builds a single Docker image and pushes it to AWS ECR
+# through DuploCloud. For repositories with multiple services/images,
+# see multi-service.yml which uses a matrix strategy.
+#
+# Prerequisites:
+#   - DuploCloud tenant configured with AWS ECR access
+#   - DUPLO_TOKEN secret configured in GitHub repository settings
+#   - DUPLO_HOST variable configured (your DuploCloud portal URL)
+#   - ECR repository created in DuploCloud for the service
+#
+# Usage:
+#   - Can be triggered manually via workflow_dispatch (dev/staging only)
+#   - Can be called from other workflows via workflow_call
+#   - Production deployments should promote images from staging (not build directly)
+#
+name: Build and Push Docker Image
+
+permissions:
+  contents: read
+
+on:
+  # Automatic triggers (uncomment when ready to enable CI/CD automation)
+  # push:
+  #   branches:
+  #     - main           # Build when PRs are merged to main
+  #   tags:
+  #     - 'v*'           # Build when version tags are pushed (e.g., v1.0.0, v2.1.3)
+  #     - 'release-*'    # Or use release tags (e.g., release-2024-01-15)
+
+  # Manual trigger - for dev/staging builds only
+  # Production images should be promoted from staging, not built directly
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: The DuploCloud tenant/environment to build for
+        required: true
+        type: choice
+        options:
+          - dev01
+          - staging01
+
+  # Called from other workflows (e.g., a main CI/CD pipeline)
+  workflow_call:
+    inputs:
+      environment:
+        description: The DuploCloud tenant/environment to build for
+        required: true
+        type: string
+    outputs:
+      image_uri:
+        description: URI of the built image
+        value: ${{ jobs.build_image.outputs.image_uri }}
+    secrets:
+      DUPLO_TOKEN:
+        description: The token to use for DuploCloud API calls
+        required: true
+
+# Environment variables needed for DuploCloud integration
+# DUPLO_HOST should be set as a repository or organization variable
+env:
+  DUPLO_HOST: ${{ vars.DUPLO_HOST }}
+  DUPLO_TOKEN: ${{ secrets.DUPLO_TOKEN }}
+
+jobs:
+  build_image:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    outputs:
+      image_uri: ${{ steps.build.outputs.uri }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # DuploCloud CI Setup configures AWS credentials and ECR login
+      # The DUPLO_TENANT environment variable tells it which tenant's AWS account to use
+      - name: DuploCloud CI Setup
+        uses: duplocloud/actions@v1.0.0 # Pin to a tag or full SHA
+        env:
+          DUPLO_TENANT: ${{ inputs.environment }}
+
+      # Build and push the Docker image to ECR
+      # The duplocloud/actions/build-image action handles:
+      #   - ECR authentication (via the CI Setup step above)
+      #   - Building the Docker image
+      #   - Tagging with branch name and commit SHA
+      #   - Pushing to the ECR repository
+      - name: Build and Push Docker Image to ECR
+        id: build
+        uses: duplocloud/actions/build-image@v1.0.0 # Pin to a tag or full SHA
+        with:
+          # ECR repository name - format: <ecr-repo-prefix>/<service-name>
+          # DuploCloud typically creates ECR repos with a tenant prefix
+          # Example: "duploservices-dev01/my-api"
+          repo: your-ecr-repo-prefix/your-service-name
+          # Dockerfile path relative to repository root
+          # If your Dockerfile is at the repo root, use "Dockerfile"
+          # If in a subdirectory, use the full path like "src/Dockerfile"
+          dockerfile: Dockerfile
+          # Build context - defaults to repository root
+          # Uncomment and modify if your build context is different:
+          # context: ./src
+          platforms: linux/amd64
+          push: true
+          # Build arguments can be passed to the Dockerfile if required
+          # Avoid logging sensitive values in summaries
+          # Tags applied to the image - branch name and full commit SHA
+          # This allows pulling by branch (latest on that branch) or exact commit
+          tags: |
+            ${{ github.ref_name }}
+            ${{ github.sha }}
+
+      - name: Validate build output
+        run: |
+          if [[ -z "${{ steps.build.outputs.uri }}" ]]; then
+            echo "::error::Build completed but no image URI returned"
+            exit 1
+          fi
+
+      # Generate a summary for the GitHub Actions UI
+      - name: Create Build Summary
+        run: |
+          echo "# Docker Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | \`${{ inputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Dockerfile** | \`Dockerfile\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Status** | \`build complete\` |" >> $GITHUB_STEP_SUMMARY

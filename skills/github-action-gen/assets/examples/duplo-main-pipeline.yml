@@ -1,0 +1,77 @@
+# Main CI/CD Pipeline - Build and Deploy
+#
+# This is the orchestration workflow that coordinates the build and deploy stages.
+# It calls reusable workflows for each stage, passing outputs between them.
+#
+# Workflow structure:
+#   pipeline.yml (this file) - orchestrates the pipeline
+#   build.yml                - builds and pushes Docker image to ECR
+#   deploy.yml               - deploys the image to DuploCloud
+#
+# Prerequisites:
+#   - DUPLO_TOKEN secret configured in GitHub repository settings
+#   - DUPLO_HOST variable configured (your DuploCloud portal URL)
+#   - build.yml and deploy.yml workflows in .github/workflows/
+#
+name: Pipeline - Build and Deploy
+
+permissions:
+  contents: read
+
+on:
+  # Automatic triggers (uncomment when ready to enable CI/CD automation)
+  # push:
+  #   branches:
+  #     - main           # Build and deploy when PRs are merged to main
+  #   tags:
+  #     - 'v*'           # Build and deploy on version tags
+
+  # Manual trigger - for dev/staging deployments
+  # Production deployments should be handled via image promotion or protected workflows
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: The environment to deploy to
+        type: choice
+        options:
+          - dev01
+          - staging01
+          # - prod01     # Uncomment if direct prod deploys are allowed
+        required: true
+
+jobs:
+  # Build stage - creates Docker image and pushes to ECR
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      environment: ${{ inputs.environment }}
+    secrets: inherit
+
+  # Deploy stage - deploys the built image to DuploCloud
+  # Waits for build to complete and uses its output image URI
+  deploy:
+    uses: ./.github/workflows/deploy.yml
+    needs: build
+    with:
+      image_uri: ${{ needs.build.outputs.image_uri }}
+      environment: ${{ inputs.environment }}
+    secrets: inherit
+
+  # Pipeline summary - runs after all stages complete (success or failure)
+  summary:
+    name: Pipeline Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [build, deploy]
+    steps:
+      - name: Create Pipeline Summary
+        run: |
+          echo "# Pipeline Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy | ${{ needs.deploy.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** \`${{ inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
